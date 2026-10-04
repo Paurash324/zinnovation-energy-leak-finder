@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Energy Leak Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+
+    /* ---- Dark theme ---- */
+    --bg: #14171F;
+    --card: #1C212C;
+    --text: #EAE7E0;
+    --muted: #98A2B3;
+    --line: #2C3444;
+
+    /* Amber → red-orange ramp, shared by accents and every bar. */
+    --amber: #F5A623;
+    --orange: #E8553B;
+    --accent: #F5A623;
+    --accent-soft: rgba(245, 166, 35, 0.12);
+    --danger: #FF6B6B;
+
+    /* Biggest-leak accent */
+    --top: #F5A623;
+    --top-soft: rgba(232, 85, 59, 0.10);
+
+    --green: #35C08A;
+    --radius: 16px;
+
+    --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-display: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+    /* ---- Layered elevation, tuned for a dark backdrop.
+       On dark, shadows must be deeper to separate panels from the page. */
+    --panel-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.55),
+      0 8px 18px -4px rgba(0, 0, 0, 0.50),
+      0 28px 50px -20px rgba(0, 0, 0, 0.75);
+
+    /* Lit top edge, shaded bottom edge — the bevel that reads on dark. */
+    --edge-inset:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.55);
+
+    /* Gentle vertical wash: panels are lit from above. */
+    --panel-bg: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--card) 90%, #ffffff) 0%,
+      var(--card) 60%,
+      color-mix(in srgb, var(--card) 94%, #000000) 100%
+    );
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 32px 16px 64px;
+    /* Page sits at the darkest layer; panels float above it.
+       Base is exactly #14171F, with a faint lit-from-above wash. */
+    background-color: #14171F;
+    background-image: radial-gradient(
+      135% 95% at 50% -12%,
+      color-mix(in srgb, #14171F 88%, #ffffff) 0%,
+      #14171F 45%,
+      color-mix(in srgb, #14171F 80%, #000000) 100%
+    );
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: var(--font-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 780px; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 24px; }
+  header h1 {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 0 0 6px;
+    letter-spacing: -0.02em;
+  }
+  header p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+  header .build-tag {
+    margin-top: 8px;
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.55;
+  }
+
+  .card {
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px;
+    margin-bottom: 20px;
+    box-shadow: var(--edge-inset), var(--panel-shadow);
+  }
+
+  h2 {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0 0 16px;
+    letter-spacing: -0.01em;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 14px;
+  }
+
+  label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 6px;
+    letter-spacing: 0.01em;
+  }
+
+  input, select {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 0.92rem;
+    font-family: inherit;
+    color: var(--text);
+    background: #151922;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .hint {
+    font-size: 0.76rem;
+    color: var(--muted);
+    margin-top: 5px;
+  }
+
+  /* Appliance rows */
+  #applianceRows { display: flex; flex-direction: column; gap: 10px; }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 130px 38px;
+    gap: 10px;
+    align-items: center;
+    background: #171B24;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px;
+  }
+
+  .row .hours-label { display: none; }
+
+  .remove {
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--line);
+    background: #232935;
+    color: var(--muted);
+    border-radius: 10px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    line-height: 1;
+    transition: all 0.15s;
+  }
+  .remove:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: rgba(232, 85, 59, 0.14);
+  }
+
+  .row-head {
+    display: grid;
+    grid-template-columns: 1fr 130px 38px;
+    gap: 10px;
+    padding: 0 10px;
+    margin-bottom: 2px;
+  }
+  .row-head span {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  button {
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    font-weight: 600;
+    padding: 11px 20px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: #232935;
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+
+  button.primary {
+    background: linear-gradient(
+      180deg,
+      #FFC46B 0%,
+      var(--amber) 45%,
+      var(--orange) 100%
+    );
+    border-color: transparent;
+    color: #14171F;
+    flex: 1 1 200px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 8px 20px -8px rgba(232, 85, 59, 0.70);
+  }
+  button.primary:hover {
+    color: #14171F;
+    filter: brightness(1.07);
+  }
+
+  .error {
+    margin-top: 14px;
+    padding: 11px 14px;
+    background: rgba(232, 85, 59, 0.12);
+    border: 1px solid rgba(232, 85, 59, 0.38);
+    border-radius: 10px;
+    color: #FFB3A3;
+    font-size: 0.86rem;
+    display: none;
+  }
+
+  /* Summary strip */
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .stat {
+    background: linear-gradient(
+      165deg,
+      rgba(245, 166, 35, 0.16) 0%,
+      rgba(232, 85, 59, 0.09) 100%
+    );
+    border: 1px solid rgba(245, 166, 35, 0.14);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow:
+      var(--edge-inset),
+      0 12px 24px -16px rgba(0, 0, 0, 0.85);
+  }
+  .stat .label {
+    font-size: 0.76rem;
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .stat .value {
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-top: 4px;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .note {
+    font-size: 0.82rem;
+    color: var(--muted);
+    background: rgba(245, 166, 35, 0.07);
+    border-left: 3px solid var(--amber);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 18px;
+  }
+
+  /* Results */
+  .result {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--card) 92%, #ffffff) 0%,
+      var(--card) 100%
+    );
+    box-shadow:
+      var(--edge-inset),
+      0 1px 2px rgba(0, 0, 0, 0.50),
+      0 14px 28px -16px rgba(0, 0, 0, 0.90);
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  /* The biggest leak: warm inset glow, gradient edge bar, tactile lift. */
+  .result.top {
+    border-color: rgba(245, 166, 35, 0.45);
+    padding-left: 23px;
+    background: linear-gradient(
+      180deg,
+      rgba(245, 166, 35, 0.15) 0%,
+      rgba(232, 85, 59, 0.09) 100%
+    );
+    box-shadow:
+      var(--edge-inset),
+      inset 0 0 0 1px rgba(245, 166, 35, 0.30),
+      inset 0 0 38px rgba(245, 166, 35, 0.17),
+      inset 0 0 12px rgba(232, 85, 59, 0.22),
+      0 2px 6px rgba(0, 0, 0, 0.60),
+      0 24px 46px -16px rgba(232, 85, 59, 0.65);
+    animation: resultReveal 180ms ease-out;
+  }
+
+  /* Gradient accent rail down the leading edge of the top card. */
+  .result.top::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(
+      180deg,
+      #FFC46B 0%,
+      var(--amber) 45%,
+      var(--orange) 100%
+    );
+  }
+
+  /* One orchestrated reveal, on the top card only. */
+  @keyframes resultReveal {
+    from { opacity: 0; transform: scale(0.94) translateY(10px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  .result-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .result-head .rank {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--muted);
+    min-width: 20px;
+  }
+  .result-head .name {
+    font-weight: 600;
+    font-size: 0.96rem;
+    flex: 1;
+  }
+  .badge {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #14171F;
+    background: linear-gradient(
+      180deg,
+      #FFC46B 0%,
+      var(--amber) 55%,
+      var(--orange) 100%
+    );
+    border-radius: 999px;
+    padding: 3px 9px;
+  }
+  .amount {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.05rem;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A recessed groove that the gradient bar sits inside of. */
+  .bar-track {
+    height: 14px;
+    background: linear-gradient(180deg, #0D1016 0%, #191E27 100%);
+    border-radius: 999px;
+    overflow: hidden;
+    margin: 11px 0 9px;
+    box-shadow:
+      inset 0 2px 5px rgba(0, 0, 0, 0.85),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  /* Convex bar: bright top edge, deepening toward the base. */
+  .bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    /* Every appliance bar uses the same amber → red-orange ramp. */
+    background: linear-gradient(
+      180deg,
+      #FFC46B 0%,
+      var(--amber) 45%,
+      var(--orange) 100%
+    );
+    box-shadow:
+      inset 0 2px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -3px 6px rgba(90, 20, 0, 0.55),
+      0 0 14px -2px rgba(232, 85, 59, 0.55);
+    transition: width 0.5s ease;
+  }
+
+  /* The top bar is the same ramp, just brighter and glowing harder. */
+  .result.top .bar-fill {
+    background: linear-gradient(
+      180deg,
+      #FFD98A 0%,
+      var(--amber) 42%,
+      var(--orange) 100%
+    );
+    box-shadow:
+      inset 0 2px 0 rgba(255, 255, 255, 0.45),
+      inset 0 -3px 6px rgba(90, 20, 0, 0.50),
+      0 0 22px -2px rgba(245, 166, 35, 0.75);
+  }
+
+  .result-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  #results { display: none; }
+
+  /* Tactile lift is pointer-only, so touch taps can't leave a card stuck
+     in its hover state. */
+  @media (hover: hover) and (pointer: fine) {
+    .result.top:hover {
+      transform: translateY(-4px);
+      box-shadow:
+        var(--edge-inset),
+        inset 0 0 0 1px rgba(245, 166, 35, 0.40),
+        inset 0 0 46px rgba(245, 166, 35, 0.24),
+        inset 0 0 14px rgba(232, 85, 59, 0.26),
+        0 3px 8px rgba(0, 0, 0, 0.65),
+        0 34px 60px -18px rgba(232, 85, 59, 0.75);
+    }
+  }
+
+  /* No motion for those who ask for none — depth stays, animation goes. */
+  @media (prefers-reduced-motion: reduce) {
+    .result.top { animation: none; }
+    .result { transition: none; }
+    .bar-fill { transition: none; }
+  }
+
+  /* Optional API key */
+  .key-box {
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0 20px;
+    margin-bottom: 20px;
+    box-shadow: var(--edge-inset), var(--panel-shadow);
+  }
+  .key-box[open] { padding-bottom: 18px; }
+  .key-box summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 15px 0;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .key-box summary::-webkit-details-marker { display: none; }
+  .key-box summary::before {
+    content: "\25B8";
+    display: inline-block;
+    transition: transform 0.15s;
+    color: var(--accent);
+  }
+  .key-box[open] summary::before { transform: rotate(90deg); }
+
+  /* AI insight card */
+  #insight { display: none; }
+  .loading-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+  .spinner {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    border: 2px solid var(--accent-soft);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .insight-text {
+    font-size: 0.98rem;
+    color: var(--text);
+    margin: 0;
+  }
+  .insight-text.fallback { color: var(--muted); }
+  .insight-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    padding: 3px 9px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>⚡ Energy Leak Finder</h1>
+    <p>Find out which appliance is quietly draining your electricity bill.</p>
+    <p class="build-tag">build · depth pass</p>
+  </header>
+
+  <details class="key-box" id="keyBox">
+    <summary>🔑 Optional: add your Groq API key for a personalised tip</summary>
+    <label for="apiKey">Groq API key</label>
+    <input type="password" id="apiKey" placeholder="Paste your key here" autocomplete="off" spellcheck="false" />
+    <div class="hint">Kept only in memory for this session — never saved to disk or sent anywhere except Groq's API. Leave blank to skip the AI tip.</div>
+  </details>
+
+  <section class="card">
+    <h2>Your bill</h2>
+    <div class="grid">
+      <div>
+        <label for="billAmount">Monthly bill (₹) — optional</label>
+        <input type="number" id="billAmount" min="0" step="1" placeholder="e.g. 2400" />
+      </div>
+      <div>
+        <label for="actualUnits">Monthly units consumed (kWh)</label>
+        <input type="number" id="actualUnits" min="0" step="0.1" placeholder="e.g. 300" />
+        <div class="hint">From your electricity bill — used to calibrate results.</div>
+      </div>
+      <div>
+        <label for="rate">Average rate (₹ per unit)</label>
+        <input type="number" id="rate" min="0" step="0.1" value="8" />
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Appliances you own</h2>
+    <div class="row-head">
+      <span>Appliance</span>
+      <span>Hours / day</span>
+      <span></span>
+    </div>
+    <div id="applianceRows"></div>
+
+    <div class="actions">
+      <button type="button" id="addRow">+ Add appliance</button>
+      <button type="button" class="primary" id="calculate">Calculate my biggest energy leak</button>
+    </div>
+
+    <div class="error" id="error"></div>
+  </section>
+
+  <section id="results"></section>
+  <section id="insight"></section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // Wattage reference table (watts)
+  var APPLIANCES = [
+    { name: "Air Conditioner (1.5 ton)", watts: 1500 },
+    { name: "Air Conditioner (1 ton)", watts: 1000 },
+    { name: "Refrigerator", watts: 150 },
+    { name: "Washing Machine", watts: 500 },
+    { name: "Electric Geyser/Water Heater", watts: 2000 },
+    { name: "Ceiling Fan", watts: 75 },
+    { name: "LED TV (42-inch)", watts: 100 },
+    { name: "Microwave Oven", watts: 1200 },
+    { name: "Water Pump/Motor", watts: 750 },
+    { name: "Iron", watts: 1000 },
+    { name: "Laptop", watts: 65 },
+    { name: "Desktop Computer", watts: 200 },
+    { name: "Electric Kettle", watts: 1500 },
+    { name: "Tube Light/LED Bulb", watts: 20 },
+    { name: "Water Purifier (RO)", watts: 60 }
+  ];
+
+  var WATTS = {};
+  APPLIANCES.forEach(function (a) { WATTS[a.name] = a.watts; });
+
+  var DAYS_PER_MONTH = 30;
+
+  var rowsEl = document.getElementById("applianceRows");
+  var errorEl = document.getElementById("error");
+  var resultsEl = document.getElementById("results");
+  var insightEl = document.getElementById("insight");
+  var apiKeyEl = document.getElementById("apiKey");
+
+  // Held only in memory for this session; never persisted anywhere.
+  var groqKey = "";
+  apiKeyEl.addEventListener("input", function () {
+    groqKey = apiKeyEl.value.trim();
+  });
+
+  function optionsHtml(selected) {
+    return APPLIANCES.map(function (a) {
+      var sel = a.name === selected ? " selected" : "";
+      return '<option value="' + a.name + '"' + sel + ">" + a.name + " (" + a.watts + "W)</option>";
+    }).join("");
+  }
+
+  function addRow(name, hours) {
+    var row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML =
+      '<select class="appliance">' + optionsHtml(name) + "</select>" +
+      '<input type="number" class="hours" min="0" max="24" step="0.5" placeholder="Hours" value="' +
+        (hours != null ? hours : "") + '" />' +
+      '<button type="button" class="remove" title="Remove">&times;</button>';
+
+    row.querySelector(".remove").addEventListener("click", function () {
+      row.remove();
+      if (!rowsEl.children.length) addRow();
+    });
+
+    rowsEl.appendChild(row);
+  }
+
+  document.getElementById("addRow").addEventListener("click", function () {
+    addRow();
+  });
+
+  // Seed with a couple of common appliances
+  addRow("Air Conditioner (1.5 ton)", 6);
+  addRow("Refrigerator", 24);
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.style.display = "block";
+  }
+
+  function clearError() {
+    errorEl.style.display = "none";
+  }
+
+  function num(value) {
+    var n = parseFloat(value);
+    return isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function formatMoney(v) {
+    return "₹" + Math.round(v).toLocaleString("en-IN");
+  }
+
+  function formatUnits(v) {
+    return (Math.round(v * 10) / 10).toLocaleString("en-IN") + " kWh";
+  }
+
+  function calculate() {
+    clearError();
+    resultsEl.style.display = "none";
+    insightEl.style.display = "none";
+    insightEl.innerHTML = "";
+
+    var actualUnits = num(document.getElementById("actualUnits").value);
+    var rate = num(document.getElementById("rate").value) || 8;
+    var billAmount = num(document.getElementById("billAmount").value);
+
+    var entered = [];
+    Array.prototype.forEach.call(rowsEl.querySelectorAll(".row"), function (row) {
+      var hours = num(row.querySelector(".hours").value);
+      if (hours > 0) {
+        entered.push({
+          name: row.querySelector(".appliance").value,
+          hours: Math.min(hours, 24)
+        });
+      }
+    });
+
+    if (!entered.length) {
+      showError("Add at least one appliance with hours used per day.");
+      return;
+    }
+
+    // Raw estimated units per appliance
+    var rawTotal = 0;
+    entered.forEach(function (item) {
+      item.rawUnits = (WATTS[item.name] * item.hours * DAYS_PER_MONTH) / 1000;
+      rawTotal += item.rawUnits;
+    });
+
+    // Scale to reconcile with the user's real bill, if provided.
+    var scale = 1;
+    var calibrated = false;
+    if (actualUnits > 0 && rawTotal > 0) {
+      scale = actualUnits / rawTotal;
+      calibrated = true;
+    }
+
+    var items = entered.map(function (item) {
+      var units = item.rawUnits * scale;
+      return {
+        name: item.name,
+        hours: item.hours,
+        watts: WATTS[item.name],
+        units: units,
+        cost: units * rate
+      };
+    });
+
+    items.sort(function (a, b) { return b.cost - a.cost; });
+
+    var totalUnits = items.reduce(function (s, i) { return s + i.units; }, 0);
+    var totalCost = items.reduce(function (s, i) { return s + i.cost; }, 0);
+    var maxCost = items[0].cost || 1;
+
+    var meta = {
+      totalUnits: totalUnits,
+      totalCost: totalCost,
+      maxCost: maxCost,
+      rate: rate,
+      actualUnits: actualUnits,
+      billAmount: billAmount,
+      calibrated: calibrated,
+      rawTotal: rawTotal
+    };
+
+    renderResults(items, meta);
+    requestInsight(items, meta);
+  }
+
+  function renderResults(items, meta) {
+    var html = "";
+
+    html += '<section class="card">';
+    html += "<h2>Results</h2>";
+
+    // Summary strip
+    html += '<div class="summary">';
+    html += stat("Estimated monthly units", formatUnits(meta.totalUnits));
+    html += stat("Estimated monthly cost", formatMoney(meta.totalCost));
+    html += stat("Biggest leak", items[0].name.split("(")[0].trim());
+    html += "</div>";
+
+    if (meta.calibrated) {
+      html += '<div class="note">Calibrated to your bill: estimated ' +
+        formatUnits(meta.rawTotal) + " scaled by ×" +
+        (Math.round((meta.actualUnits / meta.rawTotal) * 100) / 100) +
+        " to match your actual " + formatUnits(meta.actualUnits) + ".</div>";
+    } else if (!meta.actualUnits) {
+      html += '<div class="note">No meter reading entered — showing raw estimates ' +
+        "based on typical usage hours.</div>";
+    }
+
+    items.forEach(function (item, idx) {
+      var pct = meta.totalCost > 0 ? (item.cost / meta.totalCost) * 100 : 0;
+      var barPct = (item.cost / meta.maxCost) * 100;
+      var isTop = idx === 0;
+
+      html += '<div class="result' + (isTop ? " top" : "") + '">';
+      html += '<div class="result-head">';
+      html += '<span class="rank">#' + (idx + 1) + "</span>";
+      html += '<span class="name">' + item.name + "</span>";
+      if (isTop) html += '<span class="badge">Top leak</span>';
+      html += '<span class="amount">' + formatMoney(item.cost) + "</span>";
+      html += "</div>";
+
+      html += '<div class="bar-track"><div class="bar-fill" style="width:' +
+        Math.max(barPct, 2).toFixed(1) + '%"></div></div>';
+
+      html += '<div class="result-meta">';
+      html += "<span>" + formatUnits(item.units) + " / month · " + item.hours +
+        " h/day · " + item.watts + "W</span>";
+      html += "<span>" + (Math.round(pct * 10) / 10) + "% of cost</span>";
+      html += "</div>";
+      html += "</div>";
+    });
+
+    if (meta.billAmount) {
+      var diff = meta.billAmount - meta.totalCost;
+      var msg;
+      if (Math.abs(diff) < Math.max(meta.billAmount * 0.05, 1)) {
+        msg = "Your entered bill (" + formatMoney(meta.billAmount) +
+          ") closely matches this estimate.";
+      } else if (diff > 0) {
+        msg = "You entered a bill of " + formatMoney(meta.billAmount) +
+          " — about " + formatMoney(diff) +
+          " more than these appliances explain (could be other loads or fixed charges).";
+      } else {
+        msg = "You entered a bill of " + formatMoney(meta.billAmount) +
+          " — about " + formatMoney(-diff) +
+          " less than these appliances explain; double-check your hours or meter reading.";
+      }
+      html += '<div class="note">' + msg + "</div>";
+    }
+
+    html += "</section>";
+
+    resultsEl.innerHTML = html;
+    resultsEl.style.display = "block";
+    resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function stat(label, value) {
+    return '<div class="stat"><div class="label">' + label +
+      '</div><div class="value">' + value + "</div></div>";
+  }
+
+  /* ---------------- Groq insight ---------------- */
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function buildPrompt(items, meta) {
+    var breakdown = items.map(function (it) {
+      var pct = meta.totalCost > 0
+        ? Math.round((it.cost / meta.totalCost) * 1000) / 10
+        : 0;
+      return it.name + " — " + formatMoney(it.cost) + "/month, " + pct + "% of total cost";
+    }).join("; ");
+
+    return "A user's electricity usage breakdown is: " + breakdown +
+      ". Their total estimated monthly cost is " + formatMoney(meta.totalCost) +
+      ". Write a short, friendly 2-3 sentence explanation of their single biggest cost driver " +
+      "and one specific, practical tip to reduce it. Keep it conversational, not robotic. " +
+      "Do not repeat the raw numbers back verbatim, interpret them.";
+  }
+
+  function showInsight(text, isAi) {
+    insightEl.innerHTML =
+      '<section class="card"><h2>What this means for you' +
+        (isAi ? '<span class="insight-badge">Groq</span>' : "") +
+      '</h2><p class="insight-text' + (isAi ? "" : " fallback") + '">' +
+        escapeHtml(text) + "</p></section>";
+    insightEl.style.display = "block";
+  }
+
+  function requestInsight(items, meta) {
+    var topName = items[0].name;
+
+    // No key provided: the AI tip is optional, so silently skip it.
+    if (!groqKey) {
+      insightEl.style.display = "none";
+      insightEl.innerHTML = "";
+      return;
+    }
+
+    insightEl.style.display = "block";
+    insightEl.innerHTML =
+      '<section class="card"><h2>What this means for you</h2>' +
+      '<div class="loading-row"><span class="spinner"></span>' +
+      "<span>Asking Groq for a personalised tip…</span></div></section>";
+
+    var url = "https://api.groq.com/openai/v1/chat/completions";
+
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + groqKey
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-120b",
+        messages: [{ role: "user", content: buildPrompt(items, meta) }]
+      })
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error("Request failed with status " + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        var choice = data && data.choices && data.choices[0];
+        var text = (choice && choice.message && choice.message.content || "").trim();
+        if (!text) throw new Error("Empty response from Groq");
+        showInsight(text, true);
+      })
+      .catch(function () {
+        showInsight(
+          "Couldn't generate a tip right now, but the " + topName +
+          " is clearly your biggest cost here — trim its daily hours a little " +
+          "and you'll feel the difference on your next bill.",
+          false
+        );
+      });
+  }
+
+  document.getElementById("calculate").addEventListener("click", calculate);
+
+  // Recalculate on Enter in any input for convenience
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && e.target.matches("input")) {
+      e.preventDefault();
+      calculate();
+    }
+  });
+})();
+</script>
+</body>
+</html>
