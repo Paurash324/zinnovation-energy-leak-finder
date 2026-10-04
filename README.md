@@ -35,7 +35,7 @@ Energy Leak Finder is built as a fast, dependency-free browser experience using 
    python -m http.server 8000
    ```
 
-3. Visit `http://localhost:8000`.
+3. Visit `https://electricityleakfinder.netlify.app/`.
 
 ## How it works
 
